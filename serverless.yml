@@ -1,0 +1,129 @@
+service: curd-operation-sf
+frameworkVersion: '2'
+
+plugins:
+  - serverless-iam-roles-per-function
+  - serverless-stack-output
+
+custom:
+  output:
+    file: stack-output.json
+
+provider:
+  name: aws
+  runtime: python3.8
+  lambdaHashingVersion: 20201221
+  stage: ${opt:stage, 'prod'}
+  region: ${opt:region, 'us-east-1'}
+  environment: # For all lambda functions to get DynamoDB table name
+    TABLE_NAME: !Ref DynamoDBRecordTable
+
+package: # Include or exclude files or folders in package
+  patterns:
+    - '!node_modules'
+    - '!app'
+    - '!docs'
+    - '!*.json'
+    - '!*.md'
+  individually: true
+
+functions:
+  CreateRecord: # Create a new record in DB
+    name: ${self:service}-create-record-${self:provider.stage}
+    handler: functions/create_record.lambda_handler
+    iamRoleStatementsName: ${self:service}-create-record-${self:provider.stage}
+    iamRoleStatements: # IAM Role with DynamoDB create item permission only
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+        Resource: !GetAtt DynamoDBRecordTable.Arn
+    events:
+      - http:
+          path: create
+          method: POST
+          cors: true
+
+  ReadRecord: # Read all records from DB
+    name: ${self:service}-read-record-${self:provider.stage}
+    handler: functions/read_record.lambda_handler
+    iamRoleStatementsName: ${self:service}-read-record-${self:provider.stage}
+    iamRoleStatements: # IAM Role with DynamoDB scan permission only
+      - Effect: Allow
+        Action:
+          - dynamodb:Scan
+        Resource: !GetAtt DynamoDBRecordTable.Arn
+    events:
+      - http:
+          path: read
+          method: GET
+          cors: true
+  
+  UpdateRecord: # Update existing record in DB
+    name: ${self:service}-update-record-${self:provider.stage}
+    handler: functions/update_record.lambda_handler
+    iamRoleStatementsName: ${self:service}-update-record-${self:provider.stage}
+    iamRoleStatements: # IAM Role with DynamoDB delete item permission only
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+        Resource: !GetAtt DynamoDBRecordTable.Arn
+    events:
+      - http:
+          path: update
+          method: POST
+          cors: true
+
+  DeleteRecord: # Delete a particular record from DB
+    name: ${self:service}-delete-record-${self:provider.stage}
+    handler: functions/delete_record.lambda_handler
+    iamRoleStatementsName: ${self:service}-delete-record-${self:provider.stage}
+    iamRoleStatements: # IAM Role with DynamoDB permission only
+      - Effect: Allow
+        Action:
+          - dynamodb:DeleteItem
+        Resource: !GetAtt DynamoDBRecordTable.Arn
+    events:
+      - http:
+          path: delete
+          method: DELETE
+          cors: true
+
+resources:
+  Resources:
+    DynamoDBRecordTable: # Record table to store all data
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-record-table-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: email
+            KeyType: HASH
+
+  Outputs:
+    StackName:
+      Description: This is your cloudformation stack name
+      Value: ${self:service}
+    StackRegion:
+      Description: This is your cloudformation stack region
+      Value: ${self:provider.region}
+    StackStage:
+      Description: This is your cloudformation stack stage, 'dev' is default
+      Value: ${self:provider.stage}
+    ApiBaseUrl:
+      Description: This is your API base url
+      Value: !Sub 'https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com'
+    CreateRecordApiPath:
+      Description: This is your API path for create record
+      Value: !Sub '${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${self:provider.stage}/create'
+    ReadRecordApiPath:
+      Description: This is your API path for read all records
+      Value: !Sub 'https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${self:provider.stage}/read'
+    UpdateRecordApiPath:
+      Description: This is your API path for update record
+      Value: !Sub 'https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${self:provider.stage}/update'
+    DeleteRecordApiPath:
+      Description: This is your API path for delete record
+      Value: !Sub 'https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${self:provider.stage}/delete'
